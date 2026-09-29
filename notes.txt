@@ -1,0 +1,86 @@
+if a service only allows 100 request per second ,then the amount of time it takes for one reques to complete is 1/100 that is exactly equal to 10ms at t=0 1 request and t=10ms another request from the same client calling the service ,
+
+ubers implementation is blocking limiter
+asking the permission take and its like asking when I am allowed
+generally how the bucket based algo works is no matter how many requests it comes from same services it ,the bucket leaks at a constant rate.
+but in the ubers implementation uber doesn't literally maintain a bucket
+the refilling of bucket is based on elapsed time between requests rather than requiring a discrete interval clock
+instead of every 10ms add a token into the bucket ,it effectively maintains a timeline of when request are allowed,The variable State int64 int atomic representation ,it stores a timestamp ,the next schedulted permission time,
+atomic operations are on an integer so ,eventhough state stores the next scheduled permission time which should be time.Time type but,as atomic operations are integer type so we are using int64 type for the state,time stamp stored as UnixNano,
+
+
+now atomics comes into play lets say multiple go routines access take operations as shown below 
+Goroutine A ──→ Take()
+Goroutine B ──→ Take()
+Goroutine C ──→ Take()
+
+they want to access the state variable so,synchronization is needed here,the state variable should be synchronized ,read current state ,calculate the new state and write new state to behave this as one indivisible operation ,we need Compare and Swap
+
+atomic.CompareAndSwapInt64(
+    &state,
+    old,
+    new,
+)
+if the state ==old ,then state=new state return true,else dont change the state,return false
+
+the failed one will retry for the take operation meanwhile other successful executes in this way without mutex the synchronization is achieved
+
+whereas in mutex version we have lock and unlock for the synchronization to critical region
+
+
+//config type config struct{
+clock Clock
+slack int
+per time.Duration
+}
+
+atomic.CompareAndSwapInt64(
+    &state,
+    old,
+    new,
+)
+
+per is the time required for the every request
+
+slack is for accumulating the unused time elapsed between the requests
+
+
+//mutex implementation
+
+type mutexLimiter struct {
+    sync.Mutex
+
+    last time.Time //previously allowed/scheduled time,first request is explicity handled
+    sleepFor time.Duration
+    perRequest time.Duration
+    maxSlack time.Duration
+    clock Clock
+}
+
+
+
+
+sleepFor time.Duration
+
+You can think of it as:
+
+How much future waiting is currently owed?
+
+If:
+
+sleepFor > 0
+
+we need to wait.
+
+If:
+
+sleepFor <= 0
+we are already ahead of schedule ,behaves same like the state
+
+
+
+
+
+
+
+
